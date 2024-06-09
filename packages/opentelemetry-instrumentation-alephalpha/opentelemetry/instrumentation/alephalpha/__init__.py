@@ -1,10 +1,10 @@
-"""OpenTelemetry Together AI instrumentation"""
+"""OpenTelemetry Aleph Alpha instrumentation"""
 
 import logging
 import os
 from typing import Collection
-from opentelemetry.instrumentation.together.config import Config
-from opentelemetry.instrumentation.together.utils import dont_throw
+from opentelemetry.instrumentation.alephalpha.config import Config
+from opentelemetry.instrumentation.alephalpha.utils import dont_throw
 from wrapt import wrap_function_wrapper
 
 from opentelemetry import context as context_api
@@ -18,23 +18,16 @@ from opentelemetry.instrumentation.utils import (
 )
 
 from opentelemetry.semconv.ai import SpanAttributes, LLMRequestTypeValues
-from opentelemetry.instrumentation.together.version import __version__
-
+from opentelemetry.instrumentation.alephalpha.version import __version__
 
 logger = logging.getLogger(__name__)
 
-_instruments = ("together >= 1.2.0, <2",)
+_instruments = ("aleph_alpha_client >= 7.1.0, <8",)
 
 WRAPPED_METHODS = [
     {
-        "object": "resources",
-        "method": "chat.completions.ChatCompletions.create",
-        "span_name": "together.chat",
-    },
-    {
-        "object": "resources",
-        "method": "completions.Completions.create",
-        "span_name": "together.completion",
+        "method": "complete",
+        "span_name": "alephalpha.completion",
     },
 ]
 
@@ -53,32 +46,16 @@ def _set_span_attribute(span, name, value):
 
 
 @dont_throw
-def _set_input_attributes(span, llm_request_type, kwargs):
+def _set_input_attributes(span, llm_request_type, args, kwargs):
     _set_span_attribute(span, SpanAttributes.LLM_REQUEST_MODEL, kwargs.get("model"))
-    _set_span_attribute(
-        span,
-        SpanAttributes.LLM_IS_STREAMING,
-        kwargs.get("stream"),
-    )
 
     if should_send_prompts():
-        if llm_request_type == LLMRequestTypeValues.CHAT:
-            _set_span_attribute(span, f"{SpanAttributes.LLM_PROMPTS}.0.role", "user")
-            for index, message in enumerate(kwargs.get("messages")):
-                _set_span_attribute(
-                    span,
-                    f"{SpanAttributes.LLM_PROMPTS}.{index}.content",
-                    message.get("content"),
-                )
-                _set_span_attribute(
-                    span,
-                    f"{SpanAttributes.LLM_PROMPTS}.{index}.role",
-                    message.get("role"),
-                )
-        elif llm_request_type == LLMRequestTypeValues.COMPLETION:
+        if llm_request_type == LLMRequestTypeValues.COMPLETION:
             _set_span_attribute(span, f"{SpanAttributes.LLM_PROMPTS}.0.role", "user")
             _set_span_attribute(
-                span, f"{SpanAttributes.LLM_PROMPTS}.0.content", kwargs.get("prompt")
+                span,
+                f"{SpanAttributes.LLM_PROMPTS}.0.content",
+                args[0].prompt.items[0].text
             )
 
 
@@ -89,26 +66,14 @@ def _set_response_attributes(span, llm_request_type, response):
             _set_span_attribute(
                 span,
                 f"{SpanAttributes.LLM_COMPLETIONS}.0.content",
-                response.choices[0].text,
+                response.completions[0].completion,
             )
             _set_span_attribute(
                 span, f"{SpanAttributes.LLM_COMPLETIONS}.0.role", "assistant"
             )
-        elif llm_request_type == LLMRequestTypeValues.CHAT:
-            index = 0
-            prefix = f"{SpanAttributes.LLM_COMPLETIONS}.{index}"
-            _set_span_attribute(
-                span, f"{prefix}.content", response.choices[0].message.content
-            )
-            _set_span_attribute(
-                span, f"{prefix}.role", response.choices[0].message.role
-            )
 
-    _set_span_attribute(span, SpanAttributes.LLM_RESPONSE_MODEL, response.model)
-
-    usage_data = response.usage
-    input_tokens = getattr(usage_data, "prompt_tokens", 0)
-    output_tokens = getattr(usage_data, "completion_tokens", 0)
+    input_tokens = getattr(response, "num_tokens_prompt_total", 0)
+    output_tokens = getattr(response, "num_tokens_generated", 0)
 
     _set_span_attribute(
         span,
@@ -140,9 +105,7 @@ def _with_tracer_wrapper(func):
 
 
 def _llm_request_type_by_method(method_name):
-    if method_name == "chat.completions.ChatCompletions.create":
-        return LLMRequestTypeValues.CHAT
-    elif method_name == "completions.Completions.create":
+    if method_name == "complete":
         return LLMRequestTypeValues.COMPLETION
     else:
         return LLMRequestTypeValues.UNKNOWN
@@ -160,12 +123,12 @@ def _wrap(tracer, to_wrap, wrapped, instance, args, kwargs):
         name,
         kind=SpanKind.CLIENT,
         attributes={
-            SpanAttributes.LLM_SYSTEM: "TogetherAI",
+            SpanAttributes.LLM_SYSTEM: "AlephAlpha",
             SpanAttributes.LLM_REQUEST_TYPE: llm_request_type.value,
         },
     )
     if span.is_recording():
-        _set_input_attributes(span, llm_request_type, kwargs)
+        _set_input_attributes(span, llm_request_type, args, kwargs)
 
     response = wrapped(*args, **kwargs)
 
@@ -179,8 +142,8 @@ def _wrap(tracer, to_wrap, wrapped, instance, args, kwargs):
     return response
 
 
-class TogetherAiInstrumentor(BaseInstrumentor):
-    """An instrumentor for Together AI's client library."""
+class AlephAlphaInstrumentor(BaseInstrumentor):
+    """An instrumentor for Aleph Alpha's client library."""
 
     def __init__(self, exception_logger=None):
         super().__init__()
@@ -193,11 +156,10 @@ class TogetherAiInstrumentor(BaseInstrumentor):
         tracer_provider = kwargs.get("tracer_provider")
         tracer = get_tracer(__name__, __version__, tracer_provider)
         for wrapped_method in WRAPPED_METHODS:
-            wrap_object = wrapped_method.get("object")
             wrap_method = wrapped_method.get("method")
             wrap_function_wrapper(
-                "together",
-                f"{wrap_object}.{wrap_method}",
+                "aleph_alpha_client",
+                f"Client.{wrap_method}",
                 _wrap(tracer, wrapped_method),
             )
 
@@ -205,6 +167,6 @@ class TogetherAiInstrumentor(BaseInstrumentor):
         for wrapped_method in WRAPPED_METHODS:
             wrap_object = wrapped_method.get("object")
             unwrap(
-                f"together.{wrap_object}",
+                f"aleph_alpha_client.Client.{wrap_object}",
                 wrapped_method.get("method"),
             )
