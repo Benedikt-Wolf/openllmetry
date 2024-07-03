@@ -1,7 +1,6 @@
 import atexit
 import logging
 import os
-import importlib.util
 
 
 from colorama import Fore
@@ -29,7 +28,9 @@ from traceloop.sdk import Telemetry
 from traceloop.sdk.instruments import Instruments
 from traceloop.sdk.tracing.content_allow_list import ContentAllowList
 from traceloop.sdk.utils import is_notebook
+from traceloop.sdk.utils.package_check import is_package_installed
 from typing import Dict, Optional, Set
+
 
 TRACER_NAME = "traceloop.tracer"
 EXCLUDED_URLS = """
@@ -159,6 +160,15 @@ class TracerWrapper(object):
                             print(Fore.RESET)
                         else:
                             instrument_set = True
+                    elif instrument == Instruments.GOOGLE_GENERATIVEAI:
+                        if not init_google_generativeai_instrumentor():
+                            print(
+                                Fore.RED
+                                + "Warning: Google Generative AI library does not exist."
+                            )
+                            print(Fore.RESET)
+                        else:
+                            instrument_set = True
                     elif instrument == Instruments.LANGCHAIN:
                         if not init_langchain_instrumentor():
                             print(
@@ -268,6 +278,21 @@ class TracerWrapper(object):
                             print(Fore.RESET)
                         else:
                             instrument_set = True
+                    elif instrument == Instruments.ALEPHALPHA:
+                        if not init_alephalpha_instrumentor():
+                            print(
+                                Fore.RED
+                                + "Warning: Aleph Alpha library does not exist."
+                            )
+                            print(Fore.RESET)
+                        else:
+                            instrument_set = True
+                    elif instrument == Instruments.MARQO:
+                        if not init_marqo_instrumentor():
+                            print(Fore.RED + "Warning: marqo library does not exist.")
+                            print(Fore.RESET)
+                        else:
+                            instrument_set = True
 
                     else:
                         print(
@@ -309,16 +334,9 @@ class TracerWrapper(object):
         if entity_name is not None:
             span.set_attribute(SpanAttributes.TRACELOOP_ENTITY_NAME, entity_name)
 
-        correlation_id = get_value("correlation_id")
-        if correlation_id is not None:
-            span.set_attribute(SpanAttributes.TRACELOOP_CORRELATION_ID, correlation_id)
-
         association_properties = get_value("association_properties")
         if association_properties is not None:
-            for key, value in association_properties.items():
-                span.set_attribute(
-                    f"{SpanAttributes.TRACELOOP_ASSOCIATION_PROPERTIES}.{key}", value
-                )
+            _set_association_properties_attributes(span, association_properties)
 
             if not self.enable_content_tracing:
                 if self.__content_allow_list.is_allowed(association_properties):
@@ -391,6 +409,18 @@ class TracerWrapper(object):
 def set_association_properties(properties: dict) -> None:
     attach(set_value("association_properties", properties))
 
+    # Attach association properties to the current span, if it's a workflow or a task
+    span = trace.get_current_span()
+    if get_value("workflow_name") is not None or get_value("entity_name") is not None:
+        _set_association_properties_attributes(span, properties)
+
+
+def _set_association_properties_attributes(span, properties: dict) -> None:
+    for key, value in properties.items():
+        span.set_attribute(
+            f"{SpanAttributes.TRACELOOP_ASSOCIATION_PROPERTIES}.{key}", value
+        )
+
 
 def set_workflow_name(workflow_name: str) -> None:
     attach(set_value("workflow_name", workflow_name))
@@ -458,6 +488,7 @@ def init_instrumentations(should_enrich_metrics: bool):
     init_pinecone_instrumentor()
     init_qdrant_instrumentor()
     init_chroma_instrumentor()
+    init_google_generativeai_instrumentor()
     init_haystack_instrumentor()
     init_langchain_instrumentor()
     init_mistralai_instrumentor()
@@ -474,11 +505,13 @@ def init_instrumentations(should_enrich_metrics: bool):
     init_vertexai_instrumentor()
     init_watsonx_instrumentor()
     init_weaviate_instrumentor()
+    init_alephalpha_instrumentor()
+    init_marqo_instrumentor()
 
 
 def init_openai_instrumentor(should_enrich_metrics: bool):
     try:
-        if importlib.util.find_spec("openai") is not None:
+        if is_package_installed("openai"):
             Telemetry().capture("instrumentation:openai:init")
             from opentelemetry.instrumentation.openai import OpenAIInstrumentor
 
@@ -498,7 +531,7 @@ def init_openai_instrumentor(should_enrich_metrics: bool):
 
 def init_anthropic_instrumentor(should_enrich_metrics: bool):
     try:
-        if importlib.util.find_spec("anthropic") is not None:
+        if is_package_installed("anthropic"):
             Telemetry().capture("instrumentation:anthropic:init")
             from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
 
@@ -517,7 +550,7 @@ def init_anthropic_instrumentor(should_enrich_metrics: bool):
 
 def init_cohere_instrumentor():
     try:
-        if importlib.util.find_spec("cohere") is not None:
+        if is_package_installed("cohere"):
             Telemetry().capture("instrumentation:cohere:init")
             from opentelemetry.instrumentation.cohere import CohereInstrumentor
 
@@ -535,7 +568,7 @@ def init_cohere_instrumentor():
 
 def init_pinecone_instrumentor():
     try:
-        if importlib.util.find_spec("pinecone") is not None:
+        if is_package_installed("pinecone"):
             Telemetry().capture("instrumentation:pinecone:init")
             from opentelemetry.instrumentation.pinecone import PineconeInstrumentor
 
@@ -553,7 +586,7 @@ def init_pinecone_instrumentor():
 
 def init_qdrant_instrumentor():
     try:
-        if importlib.util.find_spec("qdrant_client") is not None:
+        if is_package_installed("qdrant_client"):
             Telemetry().capture("instrumentation:qdrant:init")
             from opentelemetry.instrumentation.qdrant import QdrantInstrumentor
 
@@ -570,7 +603,7 @@ def init_qdrant_instrumentor():
 
 def init_chroma_instrumentor():
     try:
-        if importlib.util.find_spec("chromadb") is not None:
+        if is_package_installed("chromadb"):
             Telemetry().capture("instrumentation:chromadb:init")
             from opentelemetry.instrumentation.chromadb import ChromaInstrumentor
 
@@ -586,9 +619,29 @@ def init_chroma_instrumentor():
         return False
 
 
+def init_google_generativeai_instrumentor():
+    try:
+        if is_package_installed("google.generativeai"):
+            Telemetry().capture("instrumentation:gemini:init")
+            from opentelemetry.instrumentation.google_generativeai import (
+                GoogleGenerativeAiInstrumentor,
+            )
+
+            instrumentor = GoogleGenerativeAiInstrumentor(
+                exception_logger=lambda e: Telemetry().log_exception(e),
+            )
+            if not instrumentor.is_instrumented_by_opentelemetry:
+                instrumentor.instrument()
+        return True
+    except Exception as e:
+        logging.error(f"Error initializing Gemini instrumentor: {e}")
+        Telemetry().log_exception(e)
+        return False
+
+
 def init_haystack_instrumentor():
     try:
-        if importlib.util.find_spec("haystack") is not None:
+        if is_package_installed("haystack"):
             Telemetry().capture("instrumentation:haystack:init")
             from opentelemetry.instrumentation.haystack import HaystackInstrumentor
 
@@ -606,7 +659,7 @@ def init_haystack_instrumentor():
 
 def init_langchain_instrumentor():
     try:
-        if importlib.util.find_spec("langchain") is not None:
+        if is_package_installed("langchain"):
             Telemetry().capture("instrumentation:langchain:init")
             from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 
@@ -624,7 +677,7 @@ def init_langchain_instrumentor():
 
 def init_mistralai_instrumentor():
     try:
-        if importlib.util.find_spec("mistralai") is not None:
+        if is_package_installed("mistralai"):
             Telemetry().capture("instrumentation:mistralai:init")
             from opentelemetry.instrumentation.mistralai import MistralAiInstrumentor
 
@@ -642,7 +695,7 @@ def init_mistralai_instrumentor():
 
 def init_ollama_instrumentor():
     try:
-        if importlib.util.find_spec("ollama") is not None:
+        if is_package_installed("ollama"):
             Telemetry().capture("instrumentation:ollama:init")
             from opentelemetry.instrumentation.ollama import OllamaInstrumentor
 
@@ -660,7 +713,7 @@ def init_ollama_instrumentor():
 
 def init_transformers_instrumentor():
     try:
-        if importlib.util.find_spec("transformers") is not None:
+        if is_package_installed("transformers"):
             Telemetry().capture("instrumentation:transformers:init")
             from opentelemetry.instrumentation.transformers import (
                 TransformersInstrumentor,
@@ -680,7 +733,7 @@ def init_transformers_instrumentor():
 
 def init_together_instrumentor():
     try:
-        if importlib.util.find_spec("together") is not None:
+        if is_package_installed("together"):
             Telemetry().capture("instrumentation:together:init")
             from opentelemetry.instrumentation.together import TogetherAiInstrumentor
 
@@ -698,7 +751,7 @@ def init_together_instrumentor():
 
 def init_llama_index_instrumentor():
     try:
-        if importlib.util.find_spec("llama_index") is not None:
+        if is_package_installed("llama_index"):
             Telemetry().capture("instrumentation:llamaindex:init")
             from opentelemetry.instrumentation.llamaindex import LlamaIndexInstrumentor
 
@@ -716,7 +769,7 @@ def init_llama_index_instrumentor():
 
 def init_milvus_instrumentor():
     try:
-        if importlib.util.find_spec("pymilvus") is not None:
+        if is_package_installed("pymilvus"):
             Telemetry().capture("instrumentation:milvus:init")
             from opentelemetry.instrumentation.milvus import MilvusInstrumentor
 
@@ -734,7 +787,7 @@ def init_milvus_instrumentor():
 
 def init_requests_instrumentor():
     try:
-        if importlib.util.find_spec("requests") is not None:
+        if is_package_installed("requests"):
             from opentelemetry.instrumentation.requests import RequestsInstrumentor
 
             instrumentor = RequestsInstrumentor()
@@ -749,7 +802,7 @@ def init_requests_instrumentor():
 
 def init_urllib3_instrumentor():
     try:
-        if importlib.util.find_spec("urllib3") is not None:
+        if is_package_installed("urllib3"):
             from opentelemetry.instrumentation.urllib3 import URLLib3Instrumentor
 
             instrumentor = URLLib3Instrumentor()
@@ -764,7 +817,7 @@ def init_urllib3_instrumentor():
 
 def init_pymysql_instrumentor():
     try:
-        if importlib.util.find_spec("sqlalchemy") is not None:
+        if is_package_installed("sqlalchemy"):
             from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
             instrumentor = SQLAlchemyInstrumentor()
@@ -779,7 +832,7 @@ def init_pymysql_instrumentor():
 
 def init_bedrock_instrumentor(should_enrich_metrics: bool):
     try:
-        if importlib.util.find_spec("boto3") is not None:
+        if is_package_installed("boto3"):
             from opentelemetry.instrumentation.bedrock import BedrockInstrumentor
 
             instrumentor = BedrockInstrumentor(
@@ -797,7 +850,7 @@ def init_bedrock_instrumentor(should_enrich_metrics: bool):
 
 def init_replicate_instrumentor():
     try:
-        if importlib.util.find_spec("replicate") is not None:
+        if is_package_installed("replicate"):
             Telemetry().capture("instrumentation:replicate:init")
             from opentelemetry.instrumentation.replicate import ReplicateInstrumentor
 
@@ -815,7 +868,7 @@ def init_replicate_instrumentor():
 
 def init_vertexai_instrumentor():
     try:
-        if importlib.util.find_spec("vertexai") is not None:
+        if is_package_installed("vertexai"):
             Telemetry().capture("instrumentation:vertexai:init")
             from opentelemetry.instrumentation.vertexai import VertexAIInstrumentor
 
@@ -833,7 +886,7 @@ def init_vertexai_instrumentor():
 
 def init_watsonx_instrumentor():
     try:
-        if importlib.util.find_spec("ibm_watson_machine_learning") is not None:
+        if is_package_installed("ibm_watson_machine_learning"):
             Telemetry().capture("instrumentation:watsonx:init")
             from opentelemetry.instrumentation.watsonx import WatsonxInstrumentor
 
@@ -851,7 +904,7 @@ def init_watsonx_instrumentor():
 
 def init_weaviate_instrumentor():
     try:
-        if importlib.util.find_spec("weaviate") is not None:
+        if is_package_installed("weaviate"):
             Telemetry().capture("instrumentation:weaviate:init")
             from opentelemetry.instrumentation.weaviate import WeaviateInstrumentor
 
@@ -863,5 +916,41 @@ def init_weaviate_instrumentor():
         return True
     except Exception as e:
         logging.warning(f"Error initializing Weaviate instrumentor: {e}")
+        Telemetry().log_exception(e)
+        return False
+
+
+def init_alephalpha_instrumentor():
+    try:
+        if is_package_installed("aleph_alpha_client"):
+            Telemetry().capture("instrumentation:alephalpha:init")
+            from opentelemetry.instrumentation.alephalpha import AlephAlphaInstrumentor
+
+            instrumentor = AlephAlphaInstrumentor(
+                exception_logger=lambda e: Telemetry().log_exception(e),
+            )
+            if not instrumentor.is_instrumented_by_opentelemetry:
+                instrumentor.instrument()
+        return True
+    except Exception as e:
+        logging.error(f"Error initializing Aleph Alpha instrumentor: {e}")
+        Telemetry().log_exception(e)
+        return False
+
+
+def init_marqo_instrumentor():
+    try:
+        if is_package_installed("marqo"):
+            Telemetry().capture("instrumentation:marqo:init")
+            from opentelemetry.instrumentation.marqo import MarqoInstrumentor
+
+            instrumentor = MarqoInstrumentor(
+                exception_logger=lambda e: Telemetry().log_exception(e),
+            )
+            if not instrumentor.is_instrumented_by_opentelemetry:
+                instrumentor.instrument()
+        return True
+    except Exception as e:
+        logging.error(f"Error initializing marqo instrumentor: {e}")
         Telemetry().log_exception(e)
         return False

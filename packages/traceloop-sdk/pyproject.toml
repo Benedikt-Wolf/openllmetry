@@ -8,7 +8,7 @@ show_missing = true
 
 [tool.poetry]
 name = "traceloop-sdk"
-version = "0.21.5"
+version = "0.23.0"
 description = "Traceloop Software Development Kit (SDK) for Python"
 authors = [
   "Gal Kleinman <gal@traceloop.com>",
@@ -32,12 +32,13 @@ opentelemetry-exporter-otlp-proto-grpc = "^1.25.0"
 opentelemetry-instrumentation-requests = "^0.46b0"
 opentelemetry-instrumentation-sqlalchemy = "^0.46b0"
 opentelemetry-instrumentation-urllib3 = "^0.46b0"
-opentelemetry-semantic-conventions-ai = "0.3.1"
+opentelemetry-semantic-conventions-ai = "0.3.2"
 opentelemetry-instrumentation-mistralai = {path="../opentelemetry-instrumentation-mistralai", develop=true}
 opentelemetry-instrumentation-openai = {path="../opentelemetry-instrumentation-openai", develop=true}
 opentelemetry-instrumentation-ollama = {path="../opentelemetry-instrumentation-ollama", develop=true}
 opentelemetry-instrumentation-anthropic = {path="../opentelemetry-instrumentation-anthropic", develop=true}
 opentelemetry-instrumentation-cohere = {path="../opentelemetry-instrumentation-cohere", develop=true}
+opentelemetry-instrumentation-google-generativeai = {path="../opentelemetry-instrumentation-google-generativeai", develop=true}
 opentelemetry-instrumentation-pinecone = {path="../opentelemetry-instrumentation-pinecone", develop=true}
 opentelemetry-instrumentation-qdrant = {path="../opentelemetry-instrumentation-qdrant", develop=true}
 opentelemetry-instrumentation-langchain = {path="../opentelemetry-instrumentation-langchain", develop=true}
@@ -52,6 +53,8 @@ opentelemetry-instrumentation-replicate = {path="../opentelemetry-instrumentatio
 opentelemetry-instrumentation-vertexai = {path="../opentelemetry-instrumentation-vertexai", develop=true}
 opentelemetry-instrumentation-watsonx = {path="../opentelemetry-instrumentation-watsonx", develop=true}
 opentelemetry-instrumentation-weaviate = {path="../opentelemetry-instrumentation-weaviate", develop=true}
+opentelemetry-instrumentation-alephalpha = {path="../opentelemetry-instrumentation-alephalpha", develop=true}
+opentelemetry-instrumentation-marqo = {path="../opentelemetry-instrumentation-marqo", develop=true}
 colorama = "^0.4.6"
 tenacity = "^8.2.3"
 pydantic = ">=1"
@@ -72,6 +75,8 @@ pytest-recording = "^0.13.1"
 pydantic = "<2"
 pytest-asyncio = "^0.23.7"
 anthropic = "^0.25.2"
+langchain = "^0.2.5"
+langchain-openai = "^0.1.8"
 
 [build-system]
 requires = [ "poetry-core" ]
